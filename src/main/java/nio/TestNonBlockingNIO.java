@@ -20,70 +20,47 @@ import java.util.Iterator;
 
 public class TestNonBlockingNIO {
     @Test
-    public void client2() throws IOException {
-        SocketChannel socketChannel = SocketChannel.open(new InetSocketAddress("127.0.0.1", 9897));
-
-        //socketChannel.configureBlocking(false);
-
-        ByteBuffer buf = ByteBuffer.allocate(1024);
-
-        buf.put("client2".getBytes());
-        buf.flip();
-
-        socketChannel.write(buf);
-
-        buf.clear();
-
-//        接收反馈
-//        int len = 0;
-//        while((len=socketChannel.read(buf)) >0 ){
-//            buf.flip();
-//            System.out.println(new String(buf.array(),0,len));
-//            buf.clear();
-//        }
-
-
-        socketChannel.close();
-
-
-    }
-
-    @Test
+    //非阻塞式客户端
     public void client() {
         try {
-            SocketChannel socketChannel = SocketChannel.open(new InetSocketAddress("127.0.0.1", 9898));
-
-
+            SocketChannel socketChannel = SocketChannel.open();
             socketChannel.configureBlocking(false);
 
-            ByteBuffer buf = ByteBuffer.allocate(1024);
 
-            buf.put("client1".getBytes());
-            buf.flip();
+            socketChannel.connect(new InetSocketAddress("127.0.0.1", 9898));
 
-            socketChannel.write(buf);
-
-            buf.clear();
 
             Selector selector = Selector.open();
-            socketChannel.register(selector,SelectionKey.OP_READ);
+            socketChannel.register(selector, SelectionKey.OP_READ | SelectionKey.OP_CONNECT);
+            while (true){
 
-            while (selector.select() > 0) {
-                Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
-                while (iterator.hasNext()) {
-                    SelectionKey selectionKey = iterator.next();
-                    if (selectionKey.isReadable()) {
-                        SocketChannel sChannel = (SocketChannel) selectionKey.channel();
-                        ByteBuffer buf1 = ByteBuffer.allocate(1024);
-                        int len = 0;
-                        while ((len = sChannel.read(buf)) > 0) {
-                            buf.flip();
-                            System.out.println(new String(buf.array(), 0, len));
-                            buf.clear();
+                if (selector.select() > 0) {
+                    Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
+                    while (iterator.hasNext()) {
+                        SelectionKey selectionKey = iterator.next();
+                        if (selectionKey.isConnectable()) {
+                            System.out.println("connected");
+                            SocketChannel sChannel = (SocketChannel) selectionKey.channel();
+                            if (sChannel.finishConnect()) {
+                                ByteBuffer buf = ByteBuffer.allocate(1024);
+                                buf.put("nonBlockingClient".getBytes());
+                                buf.flip();
+                                socketChannel.write(buf);
+                                buf.clear();
+                            }
+                        } else if (selectionKey.isReadable()) {
+                            SocketChannel sChannel = (SocketChannel) selectionKey.channel();
+                            ByteBuffer buf = ByteBuffer.allocate(1024);
+                            int len = 0;
+                            while ((len = sChannel.read(buf)) > 0) {
+                                buf.flip();
+                                System.out.println(new String(buf.array(), 0, len));
+                                buf.clear();
+                            }
                         }
+//                    selectionKey.cancel();
+                        iterator.remove();
                     }
-                    selectionKey.cancel();
-                    iterator.remove();
                 }
             }
         } catch (IOException e) {
@@ -110,47 +87,43 @@ public class TestNonBlockingNIO {
 
 
         //轮训式获取
-        while (selector.select() > 0) {
-            Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
-            while (iterator.hasNext()) {
-                SelectionKey selectionKey = iterator.next();
-                //判断具体是什么事件准备就绪
-                if (selectionKey.isAcceptable()) {
+        while(true){
+
+            if (selector.select() > 0) {
+                Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
+                while (iterator.hasNext()) {
+                    SelectionKey selectionKey = iterator.next();
+                    //判断具体是什么事件准备就绪
+                    if (selectionKey.isAcceptable()) {
 //                    SocketChannel socketChannel = serverSocketChannel.accept();
-                    ServerSocketChannel ssChannel = (ServerSocketChannel) selectionKey.channel();
-                    SocketChannel socketChannel = ssChannel.accept();
-                    socketChannel.configureBlocking(false);
-                    //将该通道注册
-                    socketChannel.register(selector, selectionKey.OP_READ);
-                } else if (selectionKey.isReadable()) {
-                    SocketChannel socketChannel = (SocketChannel) selectionKey.channel();
+                        ServerSocketChannel ssChannel = (ServerSocketChannel) selectionKey.channel();
+                        SocketChannel socketChannel = ssChannel.accept();
+                        socketChannel.configureBlocking(false);
+                        //将该通道注册
+                        socketChannel.register(selector, selectionKey.OP_READ);
+                    } else if (selectionKey.isReadable()) {
+                        SocketChannel socketChannel = (SocketChannel) selectionKey.channel();
 
-                    ByteBuffer buf = ByteBuffer.allocate(1024);
-                    System.out.println(1111);
-                    int len = 0;
+                        ByteBuffer buf = ByteBuffer.allocate(1024);
+                        System.out.println("read");
 
-                    while ((len = (socketChannel.read(buf))) > 0) {
+                        int len = 0;
+
+                        while ((len = (socketChannel.read(buf))) > 0) {
+                            buf.flip();
+                            System.out.println(new String(buf.array(), 0, len));
+                            buf.clear();
+                        }
+                        buf.put("accepted".getBytes());
                         buf.flip();
-                        System.out.println(new String(buf.array(), 0, len));
-                        buf.clear();
+
+
+                        socketChannel.write(buf);
                     }
-//                    if (socketChannel.read(buf) == -1){
-//                        selectionKey.cancel();
-//                    }
-                    buf.put("accepted".getBytes());
-                    buf.flip();
+                    iterator.remove();
 
 
-                    socketChannel.write(buf);
-//                    socketChannel.shutdownOutput();
-//                    socketChannel.register(selector,selectionKey.OP_WRITE);
-//                    selectionKey.cancel();
-                } else if (selectionKey.isWritable()) {
                 }
-
-                iterator.remove();
-
-
             }
         }
 
